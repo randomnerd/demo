@@ -1,0 +1,31 @@
+version: '3.7'
+services:
+
+  postgres:
+    image: postgres
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: fLLz7WBmtR
+      POSTGRES_DB: exchange
+      PGDATA: /data
+    volumes:
+    - pgdata:/data
+
+  exchange:
+    environment:
+      DB_URL: postgres://postgres:fLLz7WBmtR@postgres/exchange
+      REDIS_URL: redis://redis:6379
+      ZPAY_URL: http://10.8.1.5/api/v2
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports: 
+      - 3003:3000
+
+  redis:
+    image: "redis"
+    volumes:
+      - redis:/data/db
+volumes:
+  pgdata:
+  redis:

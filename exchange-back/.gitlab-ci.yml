@@ -1,0 +1,49 @@
+cache:
+    key: "$CI_COMMIT_REF_NAME"
+    untracked: true
+
+before_script:
+    - docker login -u gitlab-ci-token -p $CI_BUILD_TOKEN gitlab.srvdev.ru:4567
+
+stages:
+    - build
+    - deploy
+    
+variables:
+    CONTAINER_IMAGE: gitlab.srvdev.ru:4567/blockchain/exchange-back:$CI_COMMIT_REF_NAME
+
+build_dev:
+    only: 
+        - develop
+    stage: build
+    image: docker:git
+    services:
+        - docker:dind
+    script:
+        - docker build -t $CONTAINER_IMAGE .
+        - docker push $CONTAINER_IMAGE
+        
+build_stage:
+    only: 
+        - tags
+    stage: build
+    image: docker:git
+    services:
+        - docker:dind
+    script:
+        - docker build -t $CONTAINER_IMAGE .
+        - docker push $CONTAINER_IMAGE
+        
+deploy_dev:
+    only: 
+        - develop
+    stage: deploy
+    script:
+        - rancher-gitlab-deploy --stack develop --service back
+
+deploy_stage:
+    only:
+        - tags
+    stage: deploy
+    script:
+        - rancher-gitlab-deploy --stack stage --service back --new-image $CONTAINER_IMAGE

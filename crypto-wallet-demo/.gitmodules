@@ -1,0 +1,3 @@
+[submodule "electrumjs"]
+	path = electrumjs
+	url = https://github.com/randomnerd/electrumjs.git

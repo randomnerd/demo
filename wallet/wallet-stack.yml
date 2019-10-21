@@ -1,0 +1,28 @@
+version: '3.3'
+
+volumes:
+  pg_data:
+
+services:
+  pg:
+    image: postgres:alpine
+    environment:
+      - POSTGRES_PASSWORD=eiphiishooShaeBoh7biYem0joh3sho4
+      - POSTGRES_DB=wallet
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    deploy:
+      placement:
+        constraints: [node.hostname == squarex-dev-venus]
+
+  app:
+    image: randomnerd/wallet
+    environment:
+      - NODE_ENV=production-dev
+      - DB_HOST=pg
+      - DB_PASS=eiphiishooShaeBoh7biYem0joh3sho4
+    ports:
+      - '3131:8080'
+    deploy:
+      placement:
+        constraints: [node.hostname == squarex-dev-venus]

@@ -1,0 +1,254 @@
+{
+    "btc>eth": {
+        "disabled": false,
+        "interest": 0.005,
+        "min": 0.00001,
+        "max": 1000000
+    },
+    "btc>xmr": {
+        "disabled": false,
+        "interest": 0.005,
+        "min": 0.00001,
+        "max": 1000000
+    },
+    "btc>zec": {
+        "disabled": false,
+        "interest": 0.005,
+        "min": 0.00001,
+        "max": 1000000
+    },
+    "btc>dash": {
+        "disabled": false,
+        "interest": 0.005,
+        "min": 0.00001,
+        "max": 1000000
+    },
+    "btc>ltc": {
+        "disabled": false,
+        "interest": 0.005,
+        "min": 0.00001,
+        "max": 1000000
+    },
+    "btc>btg": {
+        "disabled": false,
+        "interest": 0.005,
+        "min": 0.00001,
+        "max": 1000000
+    },
+    "eth>btc": {
+        "disabled": false,
+        "interest": 0.005,
+        "min": 0.00001,
+        "max": 1000000
+    },
+    "eth>xmr": {
+        "disabled": false,
+        "interest": 0.005,
+        "min": 0.00001,
+        "max": 1000000
+    },
+    "eth>zec": {
+        "disabled": false,
+        "interest": 0.005,
+        "min": 0.00001,
+        "max": 1000000
+    },
+    "eth>dash": {
+        "disabled": false,
+        "interest": 0.005,
+        "min": 0.00001,
+        "max": 1000000
+    },
+    "eth>ltc": {
+        "disabled": false,
+        "interest": 0.005,
+        "min": 0.00001,
+        "max": 1000000
+    },
+    "eth>btg": {
+        "disabled": false,
+        "interest": 0.005,
+        "min": 0.00001,
+        "max": 1000000
+    },
+    "xmr>btc": {
+        "disabled": false,
+        "interest": 0.005,
+        "min": 0.00001,
+        "max": 1000000
+    },
+    "xmr>eth": {
+        "disabled": false,
+        "interest": 0.005,
+        "min": 0.00001,
+        "max": 1000000
+    },
+    "xmr>zec": {
+        "disabled": false,
+        "interest": 0.005,
+        "min": 0.00001,
+        "max": 1000000
+    },
+    "xmr>dash": {
+        "disabled": false,
+        "interest": 0.005,
+        "min": 0.00001,
+        "max": 1000000
+    },
+    "xmr>ltc": {
+        "disabled": false,
+        "interest": 0.005,
+        "min": 0.00001,
+        "max": 1000000
+    },
+    "xmr>btg": {
+        "disabled": false,
+        "interest": 0.005,
+        "min": 0.00001,
+        "max": 1000000
+    },
+    "zec>btc": {
+        "disabled": false,
+        "interest": 0.005,
+        "min": 0.00001,
+        "max": 1000000
+    },
+    "zec>eth": {
+        "disabled": false,
+        "interest": 0.005,
+        "min": 0.00001,
+        "max": 1000000
+    },
+    "zec>xmr": {
+        "disabled": false,
+        "interest": 0.005,
+        "min": 0.00001,
+        "max": 1000000
+    },
+    "zec>dash": {
+        "disabled": false,
+        "interest": 0.005,
+        "min": 0.00001,
+        "max": 1000000
+    },
+    "zec>ltc": {
+        "disabled": false,
+        "interest": 0.005,
+        "min": 0.00001,
+        "max": 1000000
+    },
+    "zec>btg": {
+        "disabled": false,
+        "interest": 0.005,
+        "min": 0.00001,
+        "max": 1000000
+    },
+    "dash>btc": {
+        "disabled": false,
+        "interest": 0.005,
+        "min": 0.00001,
+        "max": 1000000
+    },
+    "dash>eth": {
+        "disabled": false,
+        "interest": 0.005,
+        "min": 0.00001,
+        "max": 1000000
+    },
+    "dash>xmr": {
+        "disabled": false,
+        "interest": 0.005,
+        "min": 0.00001,
+        "max": 1000000
+    },
+    "dash>zec": {
+        "disabled": false,
+        "interest": 0.005,
+        "min": 0.00001,
+        "max": 1000000
+    },
+    "dash>ltc": {
+        "disabled": false,
+        "interest": 0.005,
+        "min": 0.00001,
+        "max": 1000000
+    },
+    "dash>btg": {
+        "disabled": false,
+        "interest": 0.005,
+        "min": 0.00001,
+        "max": 1000000
+    },
+    "ltc>btc": {
+        "disabled": false,
+        "interest": 0.005,
+        "min": 0.00001,
+        "max": 1000000
+    },
+    "ltc>eth": {
+        "disabled": false,
+        "interest": 0.005,
+        "min": 0.00001,
+        "max": 1000000
+    },
+    "ltc>xmr": {
+        "disabled": false,
+        "interest": 0.005,
+        "min": 0.00001,
+        "max": 1000000
+    },
+    "ltc>zec": {
+        "disabled": false,
+        "interest": 0.005,
+        "min": 0.00001,
+        "max": 1000000
+    },
+    "ltc>dash": {
+        "disabled": false,
+        "interest": 0.005,
+        "min": 0.00001,
+        "max": 1000000
+    },
+    "ltc>btg": {
+        "disabled": false,
+        "interest": 0.005,
+        "min": 0.00001,
+        "max": 1000000
+    },
+    "btg>btc": {
+        "disabled": false,
+        "interest": 0.005,
+        "min": 0.00001,
+        "max": 1000000
+    },
+    "btg>eth": {
+        "disabled": false,
+        "interest": 0.005,
+        "min": 0.00001,
+        "max": 1000000
+    },
+    "btg>xmr": {
+        "disabled": false,
+        "interest": 0.005,
+        "min": 0.00001,
+        "max": 1000000
+    },
+    "btg>zec": {
+        "disabled": false,
+        "interest": 0.005,
+        "min": 0.00001,
+        "max": 1000000
+    },
+    "btg>dash": {
+        "disabled": false,
+        "interest": 0.005,
+        "min": 0.00001,
+        "max": 1000000
+    },
+    "btg>ltc": {
+        "disabled": false,
+        "interest": 0.005,
+        "min": 0.00001,
+        "max": 1000000
+    }
+}

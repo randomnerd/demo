@@ -1,0 +1,43 @@
+{
+  "name": "wallet",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node $NODE_DEBUG_OPTION ./loader",
+    "watch": "nodemon -x \"node $NODE_DEBUG_OPTION\" -e js -- $NODE_DEBUG_OPTION ./loader",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "migrate": "node-pg-migrate"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "async": "^2.6.1",
+    "babel-plugin-transform-class-properties": "^6.24.1",
+    "babel-preset-env": "^1.7.0",
+    "babel-register": "^6.26.0",
+    "bignumber.js": "^7.1.0",
+    "bitcoin-core": "^2.0.0",
+    "bitcore-lib": "^0.15.0",
+    "bitcore-lib-zcash": "git+https://github.com/str4d/bitcore-lib-zcash.git",
+    "bs58": "latest",
+    "cls-hooked": "^4.2.2",
+    "config": "^1.30.0",
+    "continuation-local-storage": "^3.2.1",
+    "cors": "^2.8.4",
+    "express": "^4.16.3",
+    "express-auth-middle": "^1.0.4",
+    "helmet": "^3.12.1",
+    "litecore-lib": "^0.13.22",
+    "node-pg-migrate": "^3.3.0",
+    "pg": "^7.4.3",
+    "pg-native": "^3.0.0",
+    "request": "^2.87.0",
+    "sequelize": "^4.37.8",
+    "web3": "^1.0.0-beta.34",
+    "websocket": "^1.0.26"
+  },
+  "devDependencies": {
+    "nodemon": "^1.17.4"
+  }
+}

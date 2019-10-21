@@ -1,0 +1,627 @@
+diff --git a/src/init.cpp b/src/init.cpp
+index 216d8557b..11d8cde05 100644
+--- a/src/init.cpp
++++ b/src/init.cpp
+@@ -339,6 +339,7 @@ std::string HelpMessage(HelpMessageMode mode)
+     strUsage += HelpMessageOpt("-sysperms", _("Create new files with system default permissions, instead of umask 077 (only effective with disabled wallet functionality)"));
+ #endif
+     strUsage += HelpMessageOpt("-txindex", strprintf(_("Maintain a full transaction index, used by the getrawtransaction rpc call (default: %u)"), DEFAULT_TXINDEX));
++    strUsage += HelpMessageOpt("-addrindex", strprintf(_("Maintain a full address index, used by the searchrawtransactions rpc call (default: %u)"), 0));
+ 
+     strUsage += HelpMessageGroup(_("Connection options:"));
+     strUsage += HelpMessageOpt("-addnode=<ip>", _("Add a node to connect to and attempt to keep the connection open"));
+@@ -1282,7 +1283,7 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
+     nTotalCache = std::max(nTotalCache, nMinDbCache << 20); // total cache cannot be less than nMinDbCache
+     nTotalCache = std::min(nTotalCache, nMaxDbCache << 20); // total cache cannot be greater than nMaxDbcache
+     int64_t nBlockTreeDBCache = nTotalCache / 8;
+-    nBlockTreeDBCache = std::min(nBlockTreeDBCache, (GetBoolArg("-txindex", DEFAULT_TXINDEX) ? nMaxBlockDBAndTxIndexCache : nMaxBlockDBCache) << 20);
++    nBlockTreeDBCache = std::min(nBlockTreeDBCache, ((GetBoolArg("-txindex", DEFAULT_TXINDEX) && GetBoolArg("-addrindex", DEFAULT_ADDRINDEX)) ? nMaxBlockDBAndTxIndexCache : nMaxBlockDBCache) << 20);
+     nTotalCache -= nBlockTreeDBCache;
+     int64_t nCoinDBCache = std::min(nTotalCache / 2, (nTotalCache / 4) + (1 << 23)); // use 25%-50% of the remainder for disk cache
+     nCoinDBCache = std::min(nCoinDBCache, nMaxCoinsDBCache << 20); // cap total coins db cache
+@@ -1343,6 +1344,12 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
+                     break;
+                 }
+ 
++                // Check for changed -addrindex state
++                if (fAddrIndex != GetBoolArg("-addrindex", DEFAULT_ADDRINDEX)) {
++                    strLoadError = _("You need to rebuild the database using -reindex to change -addrindex");
++                    break;
++                }
++
+                 // Check for changed -prune state.  What we are concerned about is a user who has pruned blocks
+                 // in the past, but is now trying to run unpruned.
+                 if (fHavePruned && !fPruneMode) {
+diff --git a/src/main.cpp b/src/main.cpp
+index eab9ad559..458ed4b09 100644
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -7,6 +7,7 @@
+ 
+ #include "addrman.h"
+ #include "arith_uint256.h"
++#include "base58.h"
+ #include "blockencodings.h"
+ #include "chainparams.h"
+ #include "checkpoints.h"
+@@ -70,6 +71,7 @@ int nScriptCheckThreads = 0;
+ bool fImporting = false;
+ bool fReindex = false;
+ bool fTxIndex = false;
++bool fAddrIndex = false;
+ bool fHavePruned = false;
+ bool fPruneMode = false;
+ bool fIsBareMultisigStd = DEFAULT_PERMIT_BAREMULTISIG;
+@@ -1591,6 +1593,43 @@ bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransa
+     return res;
+ }
+ 
++bool ReadTransaction(CTransaction tx, const CDiskTxPos &pos, uint256 &hashBlock) {
++    CAutoFile file(OpenBlockFile(pos, true), SER_DISK, CLIENT_VERSION);
++    CBlockHeader header;
++    try {
++        file >> header;
++        fseek(file.Get(), pos.nTxOffset, SEEK_CUR);
++        file >> tx;
++    } catch (std::exception &e) {
++        return error("%s() : deserialize or I/O error", __PRETTY_FUNCTION__);
++    }
++    hashBlock = header.GetHash();
++    return true;
++}
++
++bool FindTransactionsByDestination(const CTxDestination &dest, std::set<CExtDiskTxPos> &setpos) {
++    uint160 addrid;
++    const CKeyID *pkeyid = boost::get<CKeyID>(&dest);
++    if (pkeyid)
++            addrid = static_cast<uint160>(*pkeyid);
++    if (addrid.IsNull()) {
++        const CScriptID *pscriptid = boost::get<CScriptID>(&dest);
++        if (pscriptid)
++            addrid = static_cast<uint160>(*pscriptid);
++        }
++    if (addrid.IsNull())
++        return false;
++
++    LOCK(cs_main);
++    if (!fAddrIndex)
++        return false;
++    std::vector<CExtDiskTxPos> vPos;
++    if (!pblocktree->ReadAddrIndex(addrid, vPos))
++        return false;
++    setpos.insert(vPos.begin(), vPos.end());
++    return true;
++}
++
+ /** Return transaction in txOut, and if it was found inside a block, its hash is placed in hashBlock */
+ bool GetTransaction(const uint256 &hash, CTransaction &txOut, const Consensus::Params& consensusParams, uint256 &hashBlock, bool fAllowSlow)
+ {
+@@ -2325,6 +2364,33 @@ static int64_t nTimeIndex = 0;
+ static int64_t nTimeCallbacks = 0;
+ static int64_t nTimeTotal = 0;
+ 
++// Index either: a) every data push >=8 bytes,  b) if no such pushes, the entire script
++void static BuildAddrIndex(const CScript &script, const CExtDiskTxPos &pos, std::vector<std::pair<uint160, CExtDiskTxPos> > &out)
++{
++    CScript::const_iterator pc = script.begin();
++    CScript::const_iterator pend = script.end();
++    std::vector<unsigned char> data;
++    opcodetype opcode;
++    bool fHaveData = false;
++    while (pc < pend) {
++        script.GetOp(pc, opcode, data);
++        if (0 <= opcode && opcode <= OP_PUSHDATA4 && data.size() >= 8) { // data element
++            uint160 addrid;
++            if (data.size() <= 20) {
++                memcpy(&addrid, &data[0], data.size());
++            } else {
++                addrid = Hash160(data);
++            }
++            out.push_back(std::make_pair(addrid, pos));
++            fHaveData = true;
++        }
++    }
++    if (!fHaveData) {
++        uint160 addrid = Hash160(script);
++        out.push_back(std::make_pair(addrid, pos));
++    }
++}
++
+ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pindex,
+                   CCoinsViewCache& view, const CChainParams& chainparams, bool fJustCheck)
+ {
+@@ -2439,9 +2505,15 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
+     CAmount nFees = 0;
+     int nInputs = 0;
+     int64_t nSigOpsCost = 0;
+-    CDiskTxPos pos(pindex->GetBlockPos(), GetSizeOfCompactSize(block.vtx.size()));
+-    std::vector<std::pair<uint256, CDiskTxPos> > vPos;
+-    vPos.reserve(block.vtx.size());
++
++    CExtDiskTxPos pos(CDiskTxPos(pindex->GetBlockPos(), GetSizeOfCompactSize(block.vtx.size())), pindex->nHeight);
++    std::vector<std::pair<uint256, CDiskTxPos> > vPosTxid;
++    std::vector<std::pair<uint160, CExtDiskTxPos> > vPosAddrid;
++    if (fTxIndex)
++        vPosTxid.reserve(block.vtx.size());
++    if (fAddrIndex)
++        vPosAddrid.reserve(4*block.vtx.size());
++
+     blockundo.vtxundo.reserve(block.vtx.size() - 1);
+     std::vector<PrecomputedTransactionData> txdata;
+     txdata.reserve(block.vtx.size()); // Required so that pointers to individual PrecomputedTransactionData don't get invalidated
+@@ -2504,13 +2576,26 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
+             control.Add(vChecks);
+         }
+ 
++        if (fTxIndex)
++            vPosTxid.push_back(std::make_pair(tx.GetHash(), pos));
++        if (fAddrIndex) {
++            if (!tx.IsCoinBase()) {
++                BOOST_FOREACH(const CTxIn &txin, tx.vin) {
++                    CCoins coins;
++                    view.GetCoins(txin.prevout.hash, coins);
++                    BuildAddrIndex(coins.vout[txin.prevout.n].scriptPubKey, pos, vPosAddrid);
++                }
++            }
++            BOOST_FOREACH(const CTxOut &txout, tx.vout)
++            BuildAddrIndex(txout.scriptPubKey, pos, vPosAddrid);
++        }
++
+         CTxUndo undoDummy;
+         if (i > 0) {
+             blockundo.vtxundo.push_back(CTxUndo());
+         }
+         UpdateCoins(tx, view, i == 0 ? undoDummy : blockundo.vtxundo.back(), pindex->nHeight);
+ 
+-        vPos.push_back(std::make_pair(tx.GetHash(), pos));
+         pos.nTxOffset += ::GetSerializeSize(tx, SER_DISK, CLIENT_VERSION);
+     }
+     int64_t nTime3 = GetTimeMicros(); nTimeConnect += nTime3 - nTime2;
+@@ -2551,9 +2636,13 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
+     }
+ 
+     if (fTxIndex)
+-        if (!pblocktree->WriteTxIndex(vPos))
++        if (!pblocktree->WriteTxIndex(vPosTxid))
+             return AbortNode(state, "Failed to write transaction index");
+ 
++    if (fAddrIndex)
++        if (!pblocktree->AddAddrIndex(vPosAddrid))
++            return AbortNode(state, "Failed to write address index");
++
+     // add this block to the view's block chain
+     view.SetBestBlock(pindex->GetBlockHash());
+ 
+@@ -3542,7 +3631,7 @@ bool ContextualCheckBlockHeader(const CBlockHeader& block, CValidationState& sta
+         return state.Invalid(false, REJECT_INVALID, "time-too-new", "block timestamp too far in the future");
+ 
+     // Litecoin: Reject block.nVersion=1 blocks (mainnet >= 710000, testnet >= 400000, regtest uses supermajority)
+-    const int nHeight = pindexPrev->nHeight+1;    
++    const int nHeight = pindexPrev->nHeight+1;
+     bool enforceV2 = false;
+     if (block.nVersion < 2) {
+         if (consensusParams.BIP34Height != -1) {
+@@ -4124,6 +4213,9 @@ bool static LoadBlockIndexDB()
+     pblocktree->ReadFlag("txindex", fTxIndex);
+     LogPrintf("%s: transaction index %s\n", __func__, fTxIndex ? "enabled" : "disabled");
+ 
++    pblocktree->ReadFlag("addrindex", fAddrIndex);
++    LogPrintf("LoadBlockIndexDB(): address index %s\n", fAddrIndex ? "enabled" : "disabled");
++
+     // Load pointer to end of best chain
+     BlockMap::iterator it = mapBlockIndex.find(pcoinsTip->GetBestBlock());
+     if (it == mapBlockIndex.end())
+@@ -4194,7 +4286,7 @@ bool CVerifyDB::VerifyDB(const CChainParams& chainparams, CCoinsView *coinsview,
+             return error("VerifyDB(): *** ReadBlockFromDisk failed at %d, hash=%s", pindex->nHeight, pindex->GetBlockHash().ToString());
+         // check level 1: verify block validity
+         if (nCheckLevel >= 1 && !CheckBlock(block, state, chainparams.GetConsensus()))
+-            return error("%s: *** found bad block at %d, hash=%s (%s)\n", __func__, 
++            return error("%s: *** found bad block at %d, hash=%s (%s)\n", __func__,
+                          pindex->nHeight, pindex->GetBlockHash().ToString(), FormatStateMessage(state));
+         // check level 2: verify undo validity
+         if (nCheckLevel >= 2 && pindex) {
+@@ -4370,7 +4462,7 @@ bool LoadBlockIndex()
+     return true;
+ }
+ 
+-bool InitBlockIndex(const CChainParams& chainparams) 
++bool InitBlockIndex(const CChainParams& chainparams)
+ {
+     LOCK(cs_main);
+ 
+@@ -4384,6 +4476,8 @@ bool InitBlockIndex(const CChainParams& chainparams)
+     // Use the provided setting for -txindex in the new database
+     fTxIndex = GetBoolArg("-txindex", DEFAULT_TXINDEX);
+     pblocktree->WriteFlag("txindex", fTxIndex);
++    fAddrIndex = GetBoolArg("-addrindex", DEFAULT_ADDRINDEX);
++    pblocktree->WriteFlag("addrindex", fAddrIndex);
+     LogPrintf("Initializing databases...\n");
+ 
+     // Only add the genesis block if not reindexing (in which case we reuse the one already on disk)
+diff --git a/src/main.h b/src/main.h
+index 518e700e0..74b22ea27 100644
+--- a/src/main.h
++++ b/src/main.h
+@@ -15,7 +15,9 @@
+ #include "coins.h"
+ #include "net.h"
+ #include "script/script_error.h"
++#include "script/standard.h"
+ #include "sync.h"
++#include "txdb.h"
+ #include "versionbits.h"
+ 
+ #include <algorithm>
+@@ -132,6 +134,7 @@ static const int64_t DEFAULT_MAX_TIP_AGE = 24 * 60 * 60;
+ static const bool DEFAULT_PERMIT_BAREMULTISIG = true;
+ static const bool DEFAULT_CHECKPOINTS_ENABLED = true;
+ static const bool DEFAULT_TXINDEX = false;
++static const bool DEFAULT_ADDRINDEX = false;
+ static const unsigned int DEFAULT_BANSCORE_THRESHOLD = 100;
+ 
+ static const bool DEFAULT_TESTSAFEMODE = false;
+@@ -168,6 +171,7 @@ extern bool fImporting;
+ extern bool fReindex;
+ extern int nScriptCheckThreads;
+ extern bool fTxIndex;
++extern bool fAddrIndex;
+ extern bool fIsBareMultisigStd;
+ extern bool fRequireStandard;
+ extern bool fCheckBlockIndex;
+@@ -215,11 +219,11 @@ void RegisterNodeSignals(CNodeSignals& nodeSignals);
+ /** Unregister a network node */
+ void UnregisterNodeSignals(CNodeSignals& nodeSignals);
+ 
+-/** 
++/**
+  * Process an incoming block. This only returns after the best known valid
+  * block is made active. Note that it does not, however, guarantee that the
+  * specific block passed to it has been checked for validity!
+- * 
++ *
+  * @param[out]  state   This may be set to an Error state if any error occurred processing it, including during validation/connection/etc of otherwise unrelated blocks during reorganization; or it may be set to an Invalid state if pblock is itself invalid (but this is not guaranteed even when the block is checked). If you want to *possibly* get feedback on whether pblock is valid, you must also install a CValidationInterface (see validationinterface.h) - this will have its BlockChecked method called whenever *any* block completes validation.
+  * @param[in]   pfrom   The node which we are receiving the block from; it is added to mapBlockSource and may be penalised if the block is invalid.
+  * @param[in]   pblock  The block we want to process.
+@@ -322,7 +326,7 @@ struct CNodeStateStats {
+ 
+ 
+ 
+-/** 
++/**
+  * Count ECDSA signature operations the old-fashioned (pre-0.6) way
+  * @return number of sigops this transaction's outputs will produce when spent
+  * @see CTransaction::FetchInputs
+@@ -331,7 +335,7 @@ unsigned int GetLegacySigOpCount(const CTransaction& tx);
+ 
+ /**
+  * Count ECDSA signature operations in pay-to-script-hash inputs.
+- * 
++ *
+  * @param[in] mapInputs Map of previous transactions that have outputs we're spending
+  * @return maximum number of sigops required to validate this transaction's inputs
+  * @see CTransaction::FetchInputs
+@@ -402,7 +406,7 @@ bool CheckSequenceLocks(const CTransaction &tx, int flags, LockPoints* lp = NULL
+ 
+ /**
+  * Closure representing one script verification
+- * Note that this stores references to the spending transaction 
++ * Note that this stores references to the spending transaction
+  */
+ class CScriptCheck
+ {
+@@ -443,6 +447,8 @@ public:
+ bool WriteBlockToDisk(const CBlock& block, CDiskBlockPos& pos, const CMessageHeader::MessageStartChars& messageStart);
+ bool ReadBlockFromDisk(CBlock& block, const CDiskBlockPos& pos, const Consensus::Params& consensusParams);
+ bool ReadBlockFromDisk(CBlock& block, const CBlockIndex* pindex, const Consensus::Params& consensusParams);
++bool ReadTransaction(CTransaction tx, const CDiskTxPos &pos, uint256 &hashBlock);
++bool FindTransactionsByDestination(const CTxDestination &dest, std::set<CExtDiskTxPos> &setpos);
+ 
+ /** Functions for validating blocks and updating the block tree */
+ 
+diff --git a/src/rpc/client.cpp b/src/rpc/client.cpp
+index d0675fdb4..6e9ec824d 100644
+--- a/src/rpc/client.cpp
++++ b/src/rpc/client.cpp
+@@ -79,6 +79,10 @@ static const CRPCConvertParam vRPCConvertParams[] =
+     { "createrawtransaction", 2 },
+     { "signrawtransaction", 1 },
+     { "signrawtransaction", 2 },
++    { "searchrawtransactions", 1 },
++    { "searchrawtransactions", 2 },
++    { "searchrawtransactions", 3 },
++    { "searchrawtransactions", 4 },
+     { "sendrawtransaction", 1 },
+     { "fundrawtransaction", 1 },
+     { "gettxout", 1 },
+diff --git a/src/rpc/rawtransaction.cpp b/src/rpc/rawtransaction.cpp
+index caf6e818a..13285bd16 100644
+--- a/src/rpc/rawtransaction.cpp
++++ b/src/rpc/rawtransaction.cpp
+@@ -126,6 +126,65 @@ void TxToJSON(const CTransaction& tx, const uint256 hashBlock, UniValue& entry)
+     }
+ }
+ 
++UniValue searchrawtransactions(const UniValue& params, bool fHelp)
++{
++    if (fHelp || params.size() < 1 || params.size() > 4)
++        throw runtime_error("searchrawtransactions <address> [verbose=1] [skip=0] [count=100]\n");
++
++    if (!fAddrIndex)
++        throw JSONRPCError(RPC_MISC_ERROR, "Address index not enabled");
++
++    CBitcoinAddress address(params[0].get_str());
++    if (!address.IsValid())
++        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid Bitcoin address");
++    CTxDestination dest = address.Get();
++
++    std::set<CExtDiskTxPos> setpos;
++    if (!FindTransactionsByDestination(dest, setpos))
++        throw JSONRPCError(RPC_DATABASE_ERROR, "Cannot search for address");
++
++    int nSkip = 0;
++    int nCount = 100;
++    bool fVerbose = true;
++    if (params.size() > 1)
++        fVerbose = (params[1].get_int() != 0);
++    if (params.size() > 2)
++        nSkip = params[2].get_int();
++    if (params.size() > 3)
++        nCount = params[3].get_int();
++
++    if (nSkip < 0)
++        nSkip += setpos.size();
++    if (nSkip < 0)
++        nSkip = 0;
++    if (nCount < 0)
++        nCount = 0;
++
++    std::set<CExtDiskTxPos>::const_iterator it = setpos.begin();
++    while (it != setpos.end() && nSkip--) it++;
++
++    UniValue result(UniValue::VARR);
++    while (it != setpos.end() && nCount--) {
++        CTransaction tx;
++        uint256 hashBlock;
++        if (!ReadTransaction(tx, *it, hashBlock))
++            throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "Cannot read transaction from disk");
++        CDataStream ssTx(SER_NETWORK, PROTOCOL_VERSION);
++        ssTx << tx;
++        string strHex = HexStr(ssTx.begin(), ssTx.end());
++        if (fVerbose) {
++            UniValue object(UniValue::VOBJ);
++            TxToJSON(tx, hashBlock, object);
++            object.push_back(Pair("hex", strHex));
++            result.push_back(object);
++        } else {
++            result.push_back(strHex);
++        }
++        it++;
++    }
++    return result;
++}
++
+ UniValue getrawtransaction(const UniValue& params, bool fHelp)
+ {
+     if (fHelp || params.size() < 1 || params.size() > 2)
+@@ -908,6 +967,7 @@ static const CRPCCommand commands[] =
+ { //  category              name                      actor (function)         okSafeMode
+   //  --------------------- ------------------------  -----------------------  ----------
+     { "rawtransactions",    "getrawtransaction",      &getrawtransaction,      true  },
++    { "rawtransactions",    "searchrawtransactions",  &searchrawtransactions,  true  },
+     { "rawtransactions",    "createrawtransaction",   &createrawtransaction,   true  },
+     { "rawtransactions",    "decoderawtransaction",   &decoderawtransaction,   true  },
+     { "rawtransactions",    "decodescript",           &decodescript,           true  },
+@@ -915,7 +975,7 @@ static const CRPCCommand commands[] =
+     { "rawtransactions",    "signrawtransaction",     &signrawtransaction,     false }, /* uses wallet if enabled */
+ 
+     { "blockchain",         "gettxoutproof",          &gettxoutproof,          true  },
+-    { "blockchain",         "verifytxoutproof",       &verifytxoutproof,       true  },
++    { "blockchain",         "verifytxoutproof",       &verifytxoutproof,       true  }
+ };
+ 
+ void RegisterRawTransactionRPCCommands(CRPCTable &tableRPC)
+diff --git a/src/serialize.h b/src/serialize.h
+index 04ab9aa2e..b55f6095f 100644
+--- a/src/serialize.h
++++ b/src/serialize.h
+@@ -44,7 +44,7 @@ inline T* NCONST_PTR(const T* val)
+     return const_cast<T*>(val);
+ }
+ 
+-/** 
++/**
+  * Get begin pointer of vector (non-const version).
+  * @note These functions avoid the undefined case of indexing into an empty
+  * vector, as well as that of indexing after the end of the vector.
+@@ -160,13 +160,11 @@ enum
+     SER_GETHASH         = (1 << 2),
+ };
+ 
+-#define READWRITE(obj)      (::SerReadWrite(s, (obj), nType, nVersion, ser_action))
+-
+-/** 
++/**
+  * Implement three methods for serializable objects. These are actually wrappers over
+  * "SerializationOp" template, which implements the body of each class' serialization
+  * code. Adding "ADD_SERIALIZE_METHODS" in the body of the class causes these wrappers to be
+- * added as members. 
++ * added as members.
+  */
+ #define ADD_SERIALIZE_METHODS                                                          \
+     size_t GetSerializeSize(int nType, int nVersion) const {                         \
+@@ -183,6 +181,8 @@ enum
+         SerializationOp(s, CSerActionUnserialize(), nType, nVersion);                \
+     }
+ 
++#define READWRITE(obj)      (::SerReadWrite(s, (obj), nType, nVersion, ser_action))
++
+ /*
+  * Basic Types
+  */
+@@ -309,16 +309,16 @@ uint64_t ReadCompactSize(Stream& is)
+  * sure the encoding is one-to-one, one is subtracted from all but the last digit.
+  * Thus, the byte sequence a[] with length len, where all but the last byte
+  * has bit 128 set, encodes the number:
+- * 
++ *
+  *  (a[len-1] & 0x7F) + sum(i=1..len-1, 128^i*((a[len-i-1] & 0x7F)+1))
+- * 
++ *
+  * Properties:
+  * * Very small (0-127: 1 byte, 128-16511: 2 bytes, 16512-2113663: 3 bytes)
+  * * Every integer has exactly one encoding
+  * * Encoding does not depend on size of original integer type
+  * * No redundancy: every (infinite) byte sequence corresponds to a list
+  *   of encoded integers.
+- * 
++ *
+  * 0:         [0x00]  256:        [0x81 0x00]
+  * 1:         [0x01]  16383:      [0xFE 0x7F]
+  * 127:       [0x7F]  16384:      [0xFF 0x00]
+@@ -376,7 +376,7 @@ I ReadVarInt(Stream& is)
+ #define COMPACTSIZE(obj) REF(CCompactSize(REF(obj)))
+ #define LIMITED_STRING(obj,n) REF(LimitedString< n >(REF(obj)))
+ 
+-/** 
++/**
+  * Wrapper for serializing arrays and POD.
+  */
+ class CFlatData
+diff --git a/src/txdb.cpp b/src/txdb.cpp
+index 10f6465d6..183250ba7 100644
+--- a/src/txdb.cpp
++++ b/src/txdb.cpp
+@@ -8,6 +8,7 @@
+ #include "chainparams.h"
+ #include "hash.h"
+ #include "pow.h"
++#include "random.h"
+ #include "uint256.h"
+ 
+ #include <stdint.h>
+@@ -70,6 +71,10 @@ bool CCoinsViewDB::BatchWrite(CCoinsMap &mapCoins, const uint256 &hashBlock) {
+ }
+ 
+ CBlockTreeDB::CBlockTreeDB(size_t nCacheSize, bool fMemory, bool fWipe) : CDBWrapper(GetDataDir() / "blocks" / "index", nCacheSize, fMemory, fWipe) {
++    if (!Read('S', salt)) {
++        salt = GetRandHash();
++        Write('S', salt);
++    }
+ }
+ 
+ bool CBlockTreeDB::ReadBlockFileInfo(int nFile, CBlockFileInfo &info) {
+@@ -159,6 +164,43 @@ bool CBlockTreeDB::WriteTxIndex(const std::vector<std::pair<uint256, CDiskTxPos>
+     return WriteBatch(batch);
+ }
+ 
++bool CBlockTreeDB::ReadAddrIndex(uint160 addrid, std::vector<CExtDiskTxPos> &list) {
++    boost::scoped_ptr<CDBIterator> pcursor(NewIterator());
++
++    uint64_t lookupid;
++    {
++        CHashWriter ss(SER_GETHASH, 0);
++        ss << salt;
++        ss << addrid;
++        lookupid = UintToArith256(ss.GetHash()).GetLow64();
++    }
++
++    pcursor->Seek(std::make_pair('a', lookupid));
++
++    while (pcursor->Valid()) {
++        std::pair<std::pair<char, uint64_t>, CExtDiskTxPos> key;
++        if (pcursor->GetKey(key) && key.first.first == 'a' && key.first.second == lookupid) {
++            list.push_back(key.second);
++        } else {
++            break;
++        }
++        pcursor->Next();
++    }
++    return true;
++}
++
++bool CBlockTreeDB::AddAddrIndex(const std::vector<std::pair<uint160, CExtDiskTxPos> > &list) {
++    unsigned char foo[0];
++    CDBBatch batch(*this);
++    for (std::vector<std::pair<uint160, CExtDiskTxPos> >::const_iterator it=list.begin(); it!=list.end(); it++) {
++        CHashWriter ss(SER_GETHASH, 0);
++        ss << salt;
++        ss << it->first;
++        batch.Write(std::make_pair(std::make_pair('a', UintToArith256(ss.GetHash()).GetLow64()), it->second), FLATDATA(foo));
++    }
++    return WriteBatch(batch, true);
++}
++
+ bool CBlockTreeDB::WriteFlag(const std::string &name, bool fValue) {
+     return Write(std::make_pair(DB_FLAG, name), fValue ? '1' : '0');
+ }
+diff --git a/src/txdb.h b/src/txdb.h
+index 5b98d2792..f2aee44a8 100644
+--- a/src/txdb.h
++++ b/src/txdb.h
+@@ -59,6 +59,49 @@ struct CDiskTxPos : public CDiskBlockPos
+         CDiskBlockPos::SetNull();
+         nTxOffset = 0;
+     }
++
++    friend bool operator<(const CDiskTxPos &a, const CDiskTxPos &b) {
++        return (a.nFile < b.nFile || (
++               (a.nFile == b.nFile) && (a.nPos < b.nPos || (
++               (a.nPos == b.nPos) && (a.nTxOffset < b.nTxOffset)))));
++    }
++};
++
++struct CExtDiskTxPos : public CDiskTxPos
++{
++    unsigned int nHeight;
++
++    template <typename Stream, typename Operation>
++    inline void SerializationOp(Stream& s, Operation ser_action, int nType, int nVersion) {
++            READWRITE(*(CDiskTxPos*)this);
++            READWRITE(VARINT(nHeight));
++    }
++
++    CExtDiskTxPos(const CDiskTxPos &pos, int nHeightIn) : CDiskTxPos(pos), nHeight(nHeightIn) {
++    }
++
++    CExtDiskTxPos() {
++        SetNull();
++    }
++
++    void SetNull() {
++        CDiskTxPos::SetNull();
++        nHeight = 0;
++    }
++
++    friend bool operator==(const CExtDiskTxPos &a, const CExtDiskTxPos &b) {
++        return (a.nHeight == b.nHeight && a.nFile == b.nFile && a.nPos == b.nPos && a.nTxOffset == b.nTxOffset);
++    }
++
++    friend bool operator!=(const CExtDiskTxPos &a, const CExtDiskTxPos &b) {
++        return !(a == b);
++    }
++
++    friend bool operator<(const CExtDiskTxPos &a, const CExtDiskTxPos &b) {
++        if (a.nHeight < b.nHeight) return true;
++        if (a.nHeight > b.nHeight) return false;
++        return ((const CDiskTxPos)a < (const CDiskTxPos)b);
++    }
+ };
+ 
+ /** CCoinsView backed by the coin database (chainstate/) */
+@@ -104,6 +147,7 @@ class CBlockTreeDB : public CDBWrapper
+ public:
+     CBlockTreeDB(size_t nCacheSize, bool fMemory = false, bool fWipe = false);
+ private:
++    uint256 salt;
+     CBlockTreeDB(const CBlockTreeDB&);
+     void operator=(const CBlockTreeDB&);
+ public:
+@@ -114,6 +158,8 @@ public:
+     bool ReadReindexing(bool &fReindex);
+     bool ReadTxIndex(const uint256 &txid, CDiskTxPos &pos);
+     bool WriteTxIndex(const std::vector<std::pair<uint256, CDiskTxPos> > &list);
++    bool ReadAddrIndex(uint160 addrid, std::vector<CExtDiskTxPos> &list);
++    bool AddAddrIndex(const std::vector<std::pair<uint160, CExtDiskTxPos> > &list);
+     bool WriteFlag(const std::string &name, bool fValue);
+     bool ReadFlag(const std::string &name, bool &fValue);
+     bool LoadBlockIndexGuts(boost::function<CBlockIndex*(const uint256&)> insertBlockIndex);

@@ -1,0 +1,6 @@
+theme: gitbook
+output: public/docs
+disableCoverage: true
+disableSourceCode: true
+hideGenerator: true
+tsconfig: tsconfig.json

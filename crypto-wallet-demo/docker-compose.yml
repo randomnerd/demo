@@ -1,0 +1,18 @@
+version: '3.3'
+
+# volumes:
+#   mongo_data:
+
+services:
+  mongo:
+    # restart: always
+    image: mongo:latest
+    command: --smallfiles --config /etc/mongo/mongod.conf
+    volumes:
+      # - mongo_data:/db/data
+      - ./docker:/etc/mongo
+  app:
+    # restart: always
+    image: randomnerd/ofg-wallet:latest
+    ports:
+      - '3131:3000'
