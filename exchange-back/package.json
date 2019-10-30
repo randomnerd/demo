@@ -41,7 +41,7 @@
     "sc-cluster-broker-client": "~1.0.5",
     "sc-framework-health-check": "~1.0.0",
     "sc-hot-reboot": "~1.0.0",
-    "sequelize": "^4.9.0",
+    "sequelize": "^5.15.1",
     "socketcluster": "^7.1.1",
     "web3": "^0.20.1"
   },
