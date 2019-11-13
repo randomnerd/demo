@@ -1,0 +1,38 @@
+{
+    "compilerOptions": {
+        "experimentalDecorators": true,
+        "emitDecoratorMetadata": true,
+        "esModuleInterop": true,
+        "importHelpers": true,
+        "allowSyntheticDefaultImports": true,
+        "declaration": false,
+        "incremental": true,
+        "pretty": true,
+        "module": "commonjs",
+        "moduleResolution": "node",
+        "types": [
+            "jest",
+            "node"
+        ],
+        "sourceMap": true,
+        "target": "es2018",
+        "removeComments": true,
+        "skipLibCheck": true,
+        "rootDir": "./src",
+        "baseUrl": "./src",
+        "outDir": "./dist",
+        "tsBuildInfoFile": "./dist/tsconfig.tsbuildinfo",
+        "plugins": [
+            {
+                "transform": "ts-transformer-json-schema/transformer"
+            }
+        ]
+    },
+    "include": [
+        "src/**/*.ts"
+    ],
+    "exclude": [
+        "node_modules",
+        "dist"
+    ]
+}

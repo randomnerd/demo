@@ -1,0 +1,82 @@
+{
+    "name": "mol-demo1",
+    "version": "1.0.0",
+    "description": "My Moleculer microservices project",
+    "scripts": {
+        "dev": "concurrently --restart-after 500 -ir  --default-input-target 1 'npm:*:dev'",
+        "build": "ttsc",
+        "build:dev": "ttsc -w --preserveWatchOutput",
+        "cli": "moleculer connect NATS",
+        "start": "moleculer-runner ./dist",
+        "start:dev": "node -r source-map-support/register ./node_modules/moleculer/bin/moleculer-runner.js -c ./dist/moleculer.config.js -rH ./dist",
+        "start:dev2": "tsc-watch --compiler ttypescript/bin/tsc --onSuccess 'node -r source-map-support/register ./node_modules/moleculer/bin/moleculer-runner.js -Hr --config ./dist/moleculer.config.js ./dist/services/*.js'",
+        "ci": "jest --watch",
+        "test": "jest --coverage",
+        "lint": "tslint -p tsconfig.json",
+        "dc:up": "docker-compose up --build -d",
+        "dc:down": "docker-compose down"
+    },
+    "keywords": [
+        "microservices",
+        "moleculer"
+    ],
+    "license": "ISC",
+    "author": "",
+    "devDependencies": {
+        "@types/bluebird": "^3.5.29",
+        "@types/bull": "^3.10.6",
+        "@types/jest": "^24.0.23",
+        "@types/jsonwebtoken": "^8.3.5",
+        "@types/mongoose": "^5.5.30",
+        "@types/node": "^12.12.7",
+        "jest": "^24.9.0",
+        "jest-cli": "^24.9.0",
+        "ts-jest": "^24.1.0",
+        "ts-node": "^8.5.0",
+        "ts-transformer-json-schema": "^0.6.12",
+        "tsc-watch": "^4.0.0",
+        "tslint": "^5.20.1",
+        "ttypescript": "^1.5.8",
+        "typescript": "^3.7.2"
+    },
+    "dependencies": {
+        "concurrently": "^5.0.0",
+        "ioredis": "^4.14.3",
+        "jsonwebtoken": "^8.5.1",
+        "moleculer": "https://github.com/moleculerjs/moleculer.git#next",
+        "moleculer-bull": "^0.2.5",
+        "moleculer-db": "^0.8.3",
+        "moleculer-db-adapter-mongoose": "^0.8.3",
+        "moleculer-decorators": "^1.1.1",
+        "moleculer-repl": "^0.6.1",
+        "moleculer-web": "^0.8.5",
+        "mongoose": "^5.7.10",
+        "nats": "^1.3.2",
+        "redlock": "^4.1.0",
+        "source-map-support": "^0.5.16"
+    },
+    "engines": {
+        "node": ">= 8.x.x"
+    },
+    "jest": {
+        "coverageDirectory": "<rootDir>/coverage",
+        "testEnvironment": "node",
+        "moduleFileExtensions": [
+            "ts",
+            "tsx",
+            "js"
+        ],
+        "transform": {
+            "^.+\\.(ts|tsx)$": "ts-jest"
+        },
+        "testMatch": [
+            "**/*.spec.(ts|js)"
+        ],
+        "globals": {
+            "ts-jest": {
+                "compiler": "ttypescript",
+                "tsConfig": "tsconfig.json"
+            }
+        }
+    }
+}
