@@ -31,7 +31,7 @@
     "express": "^4.15.4",
     "keythereum": "^1.0.2",
     "mailgun-js": "^0.13.1",
-    "minimist": "1.2.0",
+    "minimist": "1.2.2",
     "node-pg-migrate": "^2.9.0",
     "otplib": "^6.0.3",
     "pg": "^7.3.0",
