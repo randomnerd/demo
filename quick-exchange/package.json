@@ -34,7 +34,7 @@
     "class-transformer": "^0.2.3",
     "class-validator": "^0.10.1",
     "config": "^3.2.2",
-    "lodash": "^4.17.15",
+    "lodash": "^4.17.19",
     "pg": "^7.12.1",
     "pino": "^5.13.4",
     "pino-http": "^4.3.0",
