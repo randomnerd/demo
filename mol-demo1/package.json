@@ -42,7 +42,7 @@
     "dependencies": {
         "concurrently": "^5.0.0",
         "ioredis": "^4.14.3",
-        "jsonwebtoken": "^8.5.1",
+        "jsonwebtoken": "^9.0.0",
         "moleculer": "https://github.com/moleculerjs/moleculer.git#next",
         "moleculer-bull": "^0.2.5",
         "moleculer-db": "^0.8.3",
