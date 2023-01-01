@@ -15,7 +15,7 @@
     "bitcoin-core": "^2.2.0",
     "bitcoinjs-lib": "git+https://github.com/bitcoinjs/bitcoinjs-lib.git",
     "coinselect": "^3.1.11",
-    "config": "^3.1.0",
+    "config": "^3.3.8",
     "electrum-client": "git+https://github.com/coreyphillips/node-electrum-client.git",
     "express": "^4.17.1",
     "mongoose": "^5.6.3",
